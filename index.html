@@ -380,6 +380,17 @@
   .stats-grid{
     display:grid; grid-template-columns: 1fr 1fr; gap: 10px;
   }
+  .achv-counts{ display:flex; flex-direction:column; gap:6px; margin-top:12px; }
+  .achv-count-item{
+    display:flex; align-items:center; justify-content:space-between;
+    background: var(--panel-2); border:1px solid var(--line); border-radius:10px;
+    padding: 8px 12px; font-size: 13px; gap:8px;
+  }
+  .achv-count-item .achv-label{ flex:1; }
+  .achv-count-item .achv-num{
+    font-family: var(--font-mono); font-weight:800; color: var(--gold);
+    white-space: nowrap;
+  }
   .stat-item{
     background: var(--panel-2); border:1px solid var(--line); border-radius:12px;
     padding: 12px; display:flex; flex-direction:column; gap:4px;
@@ -1212,6 +1223,26 @@ function computeStats(){
   return { avg, best, worst, achievementsCount, violationsCount, streak: computeStreak() };
 }
 
+function computeAchievementCounts(){
+  const counts = {};
+  Object.values(state.days).forEach(entries => {
+    (entries || []).forEach(e => {
+      if(e.xp >= 0 && e.aid !== 'streak_bonus'){
+        counts[e.label] = (counts[e.label] || 0) + 1;
+      }
+    });
+  });
+  const plusActions = getSectionActions('plus');
+  const ordered = [];
+  plusActions.forEach(a => {
+    if(counts[a.label] !== undefined) ordered.push({ label: a.label, count: counts[a.label] });
+  });
+  Object.keys(counts).forEach(label => {
+    if(!ordered.some(o => o.label === label)) ordered.push({ label, count: counts[label] });
+  });
+  return ordered;
+}
+
 function fmtStatDate(key){
   const d = dateFromKey(key);
   return d.toLocaleDateString('ar', { day:'numeric', month:'short' });
@@ -1361,6 +1392,7 @@ function render(){
   }).join('');
 
   const stats = computeStats();
+  const achievementCounts = computeAchievementCounts();
 
   app.innerHTML = `
     <div class="user-bar">
@@ -1542,6 +1574,16 @@ function render(){
               <span class="stat-value neg">${stats.violationsCount}</span>
             </div>
           </div>
+          ${achievementCounts.length ? `
+          <div class="add-hint" style="margin-top:14px;">📋 عدد مرات كل إنجاز</div>
+          <div class="achv-counts">
+            ${achievementCounts.map(a => `
+              <div class="achv-count-item">
+                <span class="achv-label">${escapeHtml(a.label)}</span>
+                <span class="achv-num">× ${a.count}</span>
+              </div>
+            `).join('')}
+          </div>` : ''}
         </div>
       </div>
 
