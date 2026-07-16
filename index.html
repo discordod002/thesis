@@ -359,6 +359,7 @@
     background:none; border:none; color: var(--muted); cursor:pointer; font-size:12px; padding:2px 4px; flex-shrink:0;
   }
   .progress-custom-del:hover{ color: var(--red); }
+  .progress-item-time{ font-family: var(--font-mono); font-size:10px; color: var(--muted); font-weight:400; }
   .progress-add-btn{
     width:100%; background: transparent; border:1px dashed var(--line); border-radius:10px;
     color: var(--muted); font-family: var(--font-display); font-weight:700; font-size:13px;
@@ -586,14 +587,24 @@ const THESIS_STRUCTURE = [
 let progressOpenSections = {};
 let progressAddPanelOpen = false;
 
+function isProgressDeleted(id){
+  return (state.deletedProgress || []).includes(id);
+}
+
+function groupIds(g){
+  const ids = [];
+  for(let i=1;i<=g.count;i++) ids.push(`${g.id}_m${i}`);
+  return ids.filter(id => !isProgressDeleted(id));
+}
+
 function sectionLeafIds(section){
-  const base = section.type === 'flat' ? section.items.map(i => i.id) : (() => {
-    let ids = [];
-    section.groups.forEach(g => {
-      for(let i=1;i<=g.count;i++) ids.push(`${g.id}_m${i}`);
-    });
-    return ids;
-  })();
+  const base = section.type === 'flat'
+    ? section.items.map(i => i.id).filter(id => !isProgressDeleted(id))
+    : (() => {
+      let ids = [];
+      section.groups.forEach(g => { ids = ids.concat(groupIds(g)); });
+      return ids;
+    })();
   const custom = (state.customProgress || []).filter(c => c.sectionId === section.id).map(c => c.id);
   return [...base, ...custom];
 }
@@ -615,8 +626,31 @@ function overallProgress(){
 }
 
 async function toggleProgressItem(id){
-  if(state.progress[id]) delete state.progress[id];
-  else state.progress[id] = true;
+  if(!state.progressTimestamps) state.progressTimestamps = {};
+  if(state.progress[id]){
+    delete state.progress[id];
+    delete state.progressTimestamps[id];
+  } else {
+    state.progress[id] = true;
+    state.progressTimestamps[id] = Date.now();
+  }
+  await saveState();
+  render();
+}
+
+function fmtProgressTimestamp(id){
+  const ts = (state.progressTimestamps || {})[id];
+  if(!ts) return '';
+  const d = new Date(ts);
+  return d.toLocaleString('ar', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' });
+}
+
+async function removeBuiltinProgressItem(id, label){
+  if(!confirm(`هل تريد حذف "${label}" نهائيًا من قائمة التقدم؟`)) return;
+  if(!state.deletedProgress) state.deletedProgress = [];
+  if(!state.deletedProgress.includes(id)) state.deletedProgress.push(id);
+  delete state.progress[id];
+  if(state.progressTimestamps) delete state.progressTimestamps[id];
   await saveState();
   render();
 }
@@ -643,33 +677,43 @@ function customItemsForSection(sectionId){
   return (state.customProgress || []).filter(c => c.sectionId === sectionId);
 }
 
+function renderProgressItemRow(id, label, opts){
+  opts = opts || {};
+  const ts = fmtProgressTimestamp(id);
+  const delAttr = opts.builtin ? `data-del-builtin-progress="${id}" data-del-builtin-label="${escapeHtml(label)}"` : `data-del-custom-progress="${id}"`;
+  return `
+    <div class="progress-custom-item">
+      <label class="progress-item">
+        <input type="checkbox" data-progress-id="${id}" ${state.progress[id] ? 'checked' : ''}>
+        <span>${escapeHtml(label)}${ts ? `<br><span class="progress-item-time">✓ ${ts}</span>` : ''}</span>
+      </label>
+      <button class="progress-custom-del" ${delAttr} title="حذف العنصر">✕</button>
+    </div>
+  `;
+}
+
 function renderProgressSection(section){
   const prog = sectionProgress(section);
   const isOpen = !!progressOpenSections[section.id];
   let bodyHtml = '';
   if(section.type === 'flat'){
-    bodyHtml = section.items.map(item => `
-      <label class="progress-item">
-        <input type="checkbox" data-progress-id="${item.id}" ${state.progress[item.id] ? 'checked' : ''}>
-        <span>${escapeHtml(item.label)}</span>
-      </label>
-    `).join('');
+    bodyHtml = `<div class="progress-custom-list">${section.items
+      .filter(item => !isProgressDeleted(item.id))
+      .map(item => renderProgressItemRow(item.id, item.label, { builtin: true }))
+      .join('')}</div>`;
   } else {
     bodyHtml = section.groups.map(g => {
-      const gIds = [];
-      for(let i=1;i<=g.count;i++) gIds.push(`${g.id}_m${i}`);
+      const gIds = groupIds(g);
       const gChecked = gIds.filter(id => state.progress[id]).length;
-      const gPct = Math.round(gChecked/g.count*100);
+      const gPct = gIds.length ? Math.round(gChecked/gIds.length*100) : 0;
       return `
       <div class="progress-group">
-        <div class="progress-group-title">${escapeHtml(g.label)} <span class="progress-group-pct">(${gChecked}/${g.count} — ${gPct}%)</span></div>
-        <div class="progress-group-items">
-          ${gIds.map((id, idx) => `
-            <label class="progress-item">
-              <input type="checkbox" data-progress-id="${id}" ${state.progress[id] ? 'checked' : ''}>
-              <span>مسألة ${idx+1}</span>
-            </label>
-          `).join('')}
+        <div class="progress-group-title">${escapeHtml(g.label)} <span class="progress-group-pct">(${gChecked}/${gIds.length} — ${gPct}%)</span></div>
+        <div class="progress-custom-list">
+          ${gIds.map((id) => {
+            const num = id.split('_m')[1];
+            return renderProgressItemRow(id, `مسألة ${num}`, { builtin: true });
+          }).join('')}
         </div>
       </div>
       `;
@@ -678,15 +722,7 @@ function renderProgressSection(section){
   const customItems = customItemsForSection(section.id);
   const customHtml = customItems.length ? `
     <div class="progress-custom-list">
-      ${customItems.map(c => `
-        <div class="progress-custom-item">
-          <label class="progress-item">
-            <input type="checkbox" data-progress-id="${c.id}" ${state.progress[c.id] ? 'checked' : ''}>
-            <span>${escapeHtml(c.label)}</span>
-          </label>
-          <button class="progress-custom-del" data-del-custom-progress="${c.id}" title="حذف العنصر">✕</button>
-        </div>
-      `).join('')}
+      ${customItems.map(c => renderProgressItemRow(c.id, c.label, { builtin: false })).join('')}
     </div>
   ` : '';
   return `
@@ -796,9 +832,11 @@ async function loadState(){
     if(!state.manualOrder) state.manualOrder = { plus: [], minus: [] };
     if(!state.progress) state.progress = {};
     if(!state.customProgress) state.customProgress = [];
+    if(!state.deletedProgress) state.deletedProgress = [];
+    if(!state.progressTimestamps) state.progressTimestamps = {};
     if(migrateEntries()) await saveState();
   }catch(e){
-    state = { days: {}, customActions: [], overrides: {}, sortMode: { plus:'default', minus:'default' }, manualOrder: { plus:[], minus:[] }, progress: {}, customProgress: [] };
+    state = { days: {}, customActions: [], overrides: {}, sortMode: { plus:'default', minus:'default' }, manualOrder: { plus:[], minus:[] }, progress: {}, customProgress: [], deletedProgress: [], progressTimestamps: {} };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }
 }
@@ -1567,6 +1605,12 @@ function render(){
     btn.addEventListener('click', (ev) => {
       ev.stopPropagation();
       removeCustomProgressItem(btn.getAttribute('data-del-custom-progress'));
+    });
+  });
+  app.querySelectorAll('[data-del-builtin-progress]').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      removeBuiltinProgressItem(btn.getAttribute('data-del-builtin-progress'), btn.getAttribute('data-del-builtin-label'));
     });
   });
 
