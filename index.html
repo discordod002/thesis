@@ -692,6 +692,9 @@
     from { transform: translateY(0px); }
     to { transform: translateY(-2000px); }
   }
+  [data-starfield="off"] #starfield-container{
+    display: none;
+  }
 </style>
 </head>
 <body>
@@ -702,6 +705,7 @@
       <option value="islamic">🕌 إسلامي</option>
       <option value="purple">💜 بنفسجي</option>
     </select>
+    <button class="icon-toggle-btn" id="starfieldToggleBtnLogin" title="تشغيل/إيقاف خلفية النجوم المتحركة">🌌</button>
     <button class="icon-toggle-btn" id="themeToggleBtnLogin" title="تبديل الوضع الداكن/الفاتح">☀️</button>
   </div>
   <div class="title login-title"><span class="mark">⚡</span> سجل XP اليومي</div>
@@ -747,6 +751,7 @@ const AUTH_KEY = 'xp-tracker-auth-v1';
 const THEME_KEY = 'xp-tracker-theme';
 const LAYOUT_KEY = 'xp-tracker-layout';
 const DESIGN_KEY = 'xp-tracker-design';
+const STARFIELD_KEY = 'xp-tracker-starfield';
 let currentUser = null;
 
 function getStoredAuth(){
@@ -800,6 +805,25 @@ function toggleLayout(){
   layoutMode = layoutMode === 'wide' ? 'narrow' : 'wide';
   localStorage.setItem(LAYOUT_KEY, layoutMode);
   render();
+}
+
+/* ---------- Starfield background (تشغيل/إيقاف) ---------- */
+function getStoredStarfield(){
+  const saved = localStorage.getItem(STARFIELD_KEY);
+  return saved === 'off' ? 'off' : 'on';
+}
+let starfieldMode = 'on';
+function applyStarfield(mode){
+  starfieldMode = mode;
+  document.documentElement.setAttribute('data-starfield', mode);
+}
+function toggleStarfield(){
+  starfieldMode = starfieldMode === 'off' ? 'on' : 'off';
+  localStorage.setItem(STARFIELD_KEY, starfieldMode);
+  applyStarfield(starfieldMode);
+  const loginBtn = document.getElementById('starfieldToggleBtnLogin');
+  if(loginBtn) loginBtn.textContent = starfieldMode === 'off' ? '✨' : '🌌';
+  if(state) render();
 }
 
 function signInWithGoogle(){
@@ -1732,6 +1756,7 @@ function render(){
           <option value="purple" ${currentDesign==='purple'?'selected':''}>💜 بنفسجي</option>
         </select>
         <button class="icon-toggle-btn" id="layoutToggleBtn" title="تبديل نمط العرض (عرضي/طولي)">${layoutMode === 'wide' ? '📱' : '💻'}</button>
+        <button class="icon-toggle-btn" id="starfieldToggleBtn" title="تشغيل/إيقاف خلفية النجوم المتحركة">${starfieldMode === 'off' ? '✨' : '🌌'}</button>
         <button class="icon-toggle-btn" id="themeToggleBtn" title="تبديل الوضع الداكن/الفاتح">${isLight ? '🌙' : '☀️'}</button>
         <button class="signout-btn" id="signOutBtn">تسجيل الخروج</button>
       </span>
@@ -2194,6 +2219,8 @@ function render(){
   if(themeBtn) themeBtn.addEventListener('click', toggleTheme);
   const layoutBtn = document.getElementById('layoutToggleBtn');
   if(layoutBtn) layoutBtn.addEventListener('click', toggleLayout);
+  const starfieldBtn = document.getElementById('starfieldToggleBtn');
+  if(starfieldBtn) starfieldBtn.addEventListener('click', toggleStarfield);
   const designSelect = document.getElementById('designSelect');
   if(designSelect) designSelect.addEventListener('change', () => changeDesign(designSelect.value));
 }
@@ -2201,12 +2228,19 @@ function render(){
 window.addEventListener('load', function(){
   applyTheme(getStoredTheme());
   applyDesign(getStoredDesign());
+  applyStarfield(getStoredStarfield());
   layoutMode = getStoredLayout();
 
   const loginThemeBtn = document.getElementById('themeToggleBtnLogin');
   if(loginThemeBtn){
     loginThemeBtn.textContent = document.documentElement.getAttribute('data-theme') === 'light' ? '🌙' : '☀️';
     loginThemeBtn.addEventListener('click', toggleTheme);
+  }
+
+  const loginStarfieldBtn = document.getElementById('starfieldToggleBtnLogin');
+  if(loginStarfieldBtn){
+    loginStarfieldBtn.textContent = starfieldMode === 'off' ? '✨' : '🌌';
+    loginStarfieldBtn.addEventListener('click', toggleStarfield);
   }
 
   const loginDesignSelect = document.getElementById('designSelectLogin');
